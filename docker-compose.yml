@@ -1,0 +1,33 @@
+name: thebookon
+
+services:
+  thebookon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: thebookon:latest
+    container_name: thebookon
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3515:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health | grep -q 'ok'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.thebookon-web.rule=Host(`thebookon.ca`) || Host(`www.thebookon.ca`)
+      - traefik.http.routers.thebookon-web.entrypoints=web
+      - traefik.http.routers.thebookon-web.middlewares=thebookon-https-redirect
+      - traefik.http.routers.thebookon.rule=Host(`thebookon.ca`) || Host(`www.thebookon.ca`)
+      - traefik.http.routers.thebookon.entrypoints=websecure
+      - traefik.http.routers.thebookon.middlewares=thebookon-security-headers
+      - traefik.http.routers.thebookon.tls=true
+      - traefik.http.routers.thebookon.tls.certresolver=letsencrypt
+      - traefik.http.middlewares.thebookon-https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.thebookon-https-redirect.redirectscheme.permanent=true
+      - traefik.http.middlewares.thebookon-security-headers.headers.stsseconds=300
+      - traefik.http.middlewares.thebookon-security-headers.headers.contenttypenosniff=true
+      - traefik.http.middlewares.thebookon-security-headers.headers.framedeny=true
+      - traefik.http.services.thebookon.loadbalancer.server.port=80
