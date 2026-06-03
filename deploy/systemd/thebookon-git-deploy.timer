@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll GitHub main and deploy The Book On Publishing
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

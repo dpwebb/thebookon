@@ -23,7 +23,9 @@ See `HOSTINGER_DEPLOYMENT.md` for the full setup and DNS checklist.
 
 ## GitHub Managed Deployment
 
-The repository includes `.github/workflows/deploy-production.yml`. Once the `production` environment secrets are configured in GitHub, every push to `main` can deploy the exact pushed commit to the Hostinger VPS.
+The Hostinger VPS can poll `origin/main` with a systemd timer and run `scripts/deploy-production.sh` when a new commit is available. With that timer installed, future site updates are managed by editing the repo and pushing to `main`.
+
+The repository also includes `.github/workflows/deploy-production.yml` for manual GitHub Actions deployment once the `production` environment secrets are configured.
 
 Required GitHub environment secrets:
 

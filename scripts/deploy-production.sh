@@ -10,10 +10,21 @@ git fetch --prune origin
 git checkout main
 
 if git cat-file -e "${DEPLOY_REF}^{commit}" 2>/dev/null; then
-  git reset --hard "$DEPLOY_REF"
+  target_commit="$(git rev-parse "${DEPLOY_REF}^{commit}")"
 else
   git pull --ff-only origin main
+  target_commit="$(git rev-parse HEAD)"
 fi
+
+current_commit="$(git rev-parse HEAD)"
+current_health="$(docker inspect thebookon --format '{{.State.Health.Status}}' 2>/dev/null || true)"
+
+if [ "$current_commit" = "$target_commit" ] && [ "$current_health" = "healthy" ]; then
+  curl --fail --silent --show-error http://127.0.0.1:3515/health
+  exit 0
+fi
+
+git reset --hard "$target_commit"
 
 docker compose config >/dev/null
 docker compose up -d --build

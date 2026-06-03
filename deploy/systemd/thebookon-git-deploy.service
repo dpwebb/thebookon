@@ -1,0 +1,9 @@
+[Unit]
+Description=Deploy The Book On Publishing from GitHub
+Wants=docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/thebookon/app
+ExecStart=/usr/bin/bash /opt/thebookon/app/scripts/deploy-production.sh origin/main

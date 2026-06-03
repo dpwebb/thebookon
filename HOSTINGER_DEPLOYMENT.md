@@ -51,7 +51,7 @@ bash scripts/deploy-production.sh <commit-sha>
 
 ## GitHub Actions
 
-`.github/workflows/deploy-production.yml` validates the Compose file, connects to the VPS over SSH, and runs `scripts/deploy-production.sh` with the exact GitHub commit SHA.
+`.github/workflows/deploy-production.yml` validates the Compose file, connects to the VPS over SSH, and runs `scripts/deploy-production.sh` with the exact GitHub commit SHA. It is manual by default because the VPS systemd timer can already poll GitHub and deploy pushes to `main`.
 
 Create a `production` environment in GitHub and add:
 
@@ -63,6 +63,20 @@ PRODUCTION_SSH_PORT=22
 ```
 
 Do not commit private keys or runtime secrets. The workflow reads them only from GitHub environment secrets.
+
+## VPS Git Poller
+
+Root can install the systemd poller on the Hostinger VPS:
+
+```bash
+sudo cp deploy/systemd/thebookon-git-deploy.service /etc/systemd/system/
+sudo cp deploy/systemd/thebookon-git-deploy.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now thebookon-git-deploy.timer
+sudo systemctl start thebookon-git-deploy.service
+```
+
+The timer checks GitHub every five minutes and deploys only when `origin/main` differs from the running checkout or the container is unhealthy.
 
 ## Verify
 
