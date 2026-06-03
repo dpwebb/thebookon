@@ -1,0 +1,60 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: thebookon-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Hostinger VPS
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: docker compose config
+
+      - name: Configure SSH
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          PRODUCTION_SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$PRODUCTION_SSH_PRIVATE_KEY" > "$HOME/.ssh/thebookon_production"
+          chmod 600 "$HOME/.ssh/thebookon_production"
+          ssh-keyscan -p "${PRODUCTION_SSH_PORT:-22}" "$PRODUCTION_HOST" >> "$HOME/.ssh/known_hosts"
+
+      - name: Deploy exact commit
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_USER: ${{ secrets.PRODUCTION_USER }}
+          PRODUCTION_SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/thebookon_production" \
+            -p "${PRODUCTION_SSH_PORT:-22}" \
+            -o IdentitiesOnly=yes \
+            "$PRODUCTION_USER@$PRODUCTION_HOST" \
+            "cd /opt/thebookon/app && bash scripts/deploy-production.sh '$DEPLOY_SHA'"
+
+      - name: Verify HTTPS route
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent \
+            --resolve thebookon.ca:443:"$PRODUCTION_HOST" \
+            https://thebookon.ca/health

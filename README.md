@@ -16,10 +16,20 @@ Use the bundled Codex Python runtime or any Python 3.11+ interpreter:
 
 ```bash
 cd /opt/thebookon/app
-git fetch --prune origin
-git checkout main
-git pull --ff-only origin main
-docker compose up -d --build
+bash scripts/deploy-production.sh
 ```
 
 See `HOSTINGER_DEPLOYMENT.md` for the full setup and DNS checklist.
+
+## GitHub Managed Deployment
+
+The repository includes `.github/workflows/deploy-production.yml`. Once the `production` environment secrets are configured in GitHub, every push to `main` can deploy the exact pushed commit to the Hostinger VPS.
+
+Required GitHub environment secrets:
+
+```text
+PRODUCTION_HOST
+PRODUCTION_USER
+PRODUCTION_SSH_PRIVATE_KEY
+PRODUCTION_SSH_PORT
+```

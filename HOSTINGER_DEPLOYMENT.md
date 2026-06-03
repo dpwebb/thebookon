@@ -39,11 +39,30 @@ docker compose up -d --build
 
 ```bash
 cd /opt/thebookon/app
-git fetch --prune origin
-git pull --ff-only origin main
-docker compose up -d --build
-docker image prune -f
+bash scripts/deploy-production.sh
 ```
+
+To deploy a specific commit:
+
+```bash
+cd /opt/thebookon/app
+bash scripts/deploy-production.sh <commit-sha>
+```
+
+## GitHub Actions
+
+`.github/workflows/deploy-production.yml` validates the Compose file, connects to the VPS over SSH, and runs `scripts/deploy-production.sh` with the exact GitHub commit SHA.
+
+Create a `production` environment in GitHub and add:
+
+```text
+PRODUCTION_HOST=187.127.252.51
+PRODUCTION_USER=<VPS deploy user>
+PRODUCTION_SSH_PRIVATE_KEY=<OpenSSH private key authorized for the deploy user>
+PRODUCTION_SSH_PORT=22
+```
+
+Do not commit private keys or runtime secrets. The workflow reads them only from GitHub environment secrets.
 
 ## Verify
 
