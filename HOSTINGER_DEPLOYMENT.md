@@ -12,6 +12,7 @@ vps path: /opt/thebookon/app
 container: thebookon
 local port: 127.0.0.1:3515
 proxy: shared Traefik + Let's Encrypt
+runtime data: Docker volume `thebookon_thebookon_data` mounted at `/app/data`
 ```
 
 ## DNS Cutover
@@ -34,6 +35,8 @@ git clone git@github.com:dpwebb/thebookon.git /opt/thebookon/app
 cd /opt/thebookon/app
 docker compose up -d --build
 ```
+
+The first container start creates persistent JSON stores for author accounts, contact messages, reset-help requests, manuscript submissions, and private uploaded files inside the Docker volume. Keep that volume in place across redeploys.
 
 ## Updating Production
 

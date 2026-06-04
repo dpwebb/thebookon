@@ -35,8 +35,18 @@
     <div class="section-inner content">
       <p class="eyebrow">The Book On Publishing</p>
       <h1>Login</h1>
-      <p>Author account tools are being connected to the new Git-backed site. Please check back soon or use the contact page.</p>
-      
+      <p class="lead">Log in to view your author dashboard and manuscript status.</p>
+      <form class="service-form compact-form" action="/api/login" method="post">
+        <label class="hp-field">Website <input type="text" name="website" autocomplete="off" tabindex="-1"></label>
+        <label>Email
+          <input type="email" name="email" autocomplete="email" required>
+        </label>
+        <label>Password
+          <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button class="button" type="submit">Log In</button>
+      </form>
+      <p><a href="/register/">Create an account</a> · <a href="/password-reset/">Need access help?</a></p>
     </div>
   </main>
 

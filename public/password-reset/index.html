@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Password Reset</title>
-  <meta name="description" content="Reset Your Password Forgot your password? No worries — it happens to the best of us.Enter your email address below, and we’ll send you a secure link to reset your password. If you don’t see the email within a few minutes, check your spam or promotions folder.Still nothing? Try again, or reach out to our … Read more “Password Reset”">
+  <meta name="description" content="Request help regaining access to your The Book On Publishing author account.">
   <link rel="canonical" href="https://thebookon.ca/password-reset/">
   <meta property="og:title" content="Password Reset">
-  <meta property="og:description" content="Reset Your Password Forgot your password? No worries — it happens to the best of us.Enter your email address below, and we’ll send you a secure link to reset your password. If you don’t see the email within a few minutes, check your spam or promotions folder.Still nothing? Try again, or reach out to our … Read more “Password Reset”">
+  <meta property="og:description" content="Request help regaining access to your The Book On Publishing author account.">
   <meta property="og:image" content="https://thebookon.ca/assets/default-social-image-1200x630-px.png">
   <meta property="og:type" content="website">
   <link rel="stylesheet" href="/styles.css?v=reading-room-20260604">
@@ -35,8 +35,15 @@
     <div class="section-inner content">
       <p class="eyebrow">The Book On Publishing</p>
       <h1>Password Reset</h1>
-      <p>Password reset is being connected to the new Git-backed site. Please use the contact page if you need author account support.</p>
-      
+      <p class="lead">Request help regaining access to your author account. A reset-help request will be logged for support review.</p>
+      <form class="service-form compact-form" action="/api/password-reset" method="post">
+        <label class="hp-field">Website <input type="text" name="website" autocomplete="off" tabindex="-1"></label>
+        <label>Author account email
+          <input type="email" name="email" autocomplete="email" required>
+        </label>
+        <button class="button" type="submit">Request Reset Help</button>
+      </form>
+      <p>Remembered your password? <a href="/login/">Log in</a>.</p>
     </div>
   </main>
 

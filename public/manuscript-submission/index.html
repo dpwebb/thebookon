@@ -35,8 +35,92 @@
     <div class="section-inner content">
       <p class="eyebrow">The Book On Publishing</p>
       <h1>Manuscript Submission</h1>
-      <p>The manuscript submission portal is being connected to the new Git-backed site. Please use the contact page while account tools are being restored.</p>
-      
+      <p class="lead">Submit a completed manuscript or strong proposal for editorial review. Your work is stored privately for The Book On Publishing team and logged with a reference number.</p>
+      <div class="notice" data-submission-session hidden></div>
+
+      <form class="service-form" action="/api/manuscripts" method="post" enctype="multipart/form-data" data-submission-form>
+        <label class="hp-field">Website <input type="text" name="website" autocomplete="off" tabindex="-1"></label>
+
+        <fieldset>
+          <legend>Author Details</legend>
+          <div class="form-grid">
+            <label>Author name
+              <input name="author_name" autocomplete="name" required>
+            </label>
+            <label>Email
+              <input type="email" name="email" autocomplete="email" required>
+            </label>
+            <label>Phone
+              <input name="phone" autocomplete="tel">
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Project Details</legend>
+          <div class="form-grid">
+            <label>Book title
+              <input name="title" required>
+            </label>
+            <label>Category
+              <select name="category" required>
+                <option value="">Select a category</option>
+                <option>Business and strategy</option>
+                <option>Personal development</option>
+                <option>Technology and AI</option>
+                <option>Relationships and society</option>
+                <option>Memoir or lived experience</option>
+                <option>Other nonfiction</option>
+              </select>
+            </label>
+            <label>Project stage
+              <select name="stage" required>
+                <option value="">Select a stage</option>
+                <option>Completed manuscript</option>
+                <option>Late-stage draft</option>
+                <option>Book proposal</option>
+                <option>Idea with outline</option>
+              </select>
+            </label>
+            <label>Publishing path
+              <select name="service_interest" required>
+                <option value="">Select an option</option>
+                <option>Free curated publishing review</option>
+                <option>Self-publishing services</option>
+                <option>Unsure, recommend a path</option>
+              </select>
+            </label>
+          </div>
+
+          <label>Who is the target reader?
+            <textarea name="audience" rows="4" required></textarea>
+          </label>
+          <label>What is the book about?
+            <textarea name="synopsis" rows="7" required></textarea>
+          </label>
+          <label>What inspired you to write it?
+            <textarea name="inspiration" rows="5"></textarea>
+          </label>
+          <label>Manuscript or proposal file
+            <input type="file" name="manuscript_file" accept=".pdf,.doc,.docx,.odt,.rtf,.txt" required>
+          </label>
+          <p class="form-help">Accepted files: PDF, DOC, DOCX, ODT, RTF, or TXT. Maximum upload size: 50 MB.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Author Confirmation</legend>
+          <label class="check-row">
+            <input type="checkbox" name="rights_confirm" value="yes" required>
+            <span>I confirm this is my original work or I have the rights required to submit it.</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" name="terms_confirm" value="yes" required>
+            <span>I understand submission does not guarantee acceptance and agree to the <a href="/terms-conditions/">submission terms</a>.</span>
+          </label>
+        </fieldset>
+
+        <button class="button" type="submit">Submit Manuscript</button>
+      </form>
     </div>
   </main>
 
@@ -47,5 +131,6 @@
       <span><a href="/privacy-policy/">Privacy Policy</a> · <a href="/terms-conditions/">Terms & Conditions</a></span>
     </div>
   </footer>
+  <script src="/portal.js?v=forms-20260604" defer></script>
 </body>
 </html>

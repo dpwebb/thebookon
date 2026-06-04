@@ -36,7 +36,33 @@
       <p class="eyebrow">The Book On Publishing</p>
       <h1>Contact Us</h1>
       <div><div><div><div><h2>Contact Us</h2></div><div><p><strong>Whether you’re ready to publish or just exploring your options, we’re here to help.</strong></p></div><div><p>Have a question about publishing with us? Curious about how our free and self-publishing services work? We’d love to hear from you. Our team is made up of authors, editors, and creatives who understand the journey—and we’re here to make it easier. Send us a message and we’ll get back to you within 1–2 business days. Your next chapter might just start with a conversation.</p></div></div></div><div></div></div>
-      
+      <form class="service-form" action="/api/contact" method="post">
+        <label class="hp-field">Website <input type="text" name="website" autocomplete="off" tabindex="-1"></label>
+        <div class="form-grid">
+          <label>Name
+            <input name="name" autocomplete="name" required>
+          </label>
+          <label>Email
+            <input type="email" name="email" autocomplete="email" required>
+          </label>
+          <label>Phone
+            <input name="phone" autocomplete="tel">
+          </label>
+          <label>Topic
+            <select name="topic">
+              <option>Publishing question</option>
+              <option>Manuscript submission</option>
+              <option>Self-publishing services</option>
+              <option>Author account support</option>
+              <option>Rights or royalties</option>
+            </select>
+          </label>
+        </div>
+        <label>Message
+          <textarea name="message" rows="7" required></textarea>
+        </label>
+        <button class="button" type="submit">Send Message</button>
+      </form>
     </div>
   </main>
 

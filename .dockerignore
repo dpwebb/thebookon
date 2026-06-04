@@ -1,5 +1,9 @@
 .git
 .github
+data
+data-*
+node_modules
+output
 tools
 HOSTINGER_DEPLOYMENT.md
 README.md

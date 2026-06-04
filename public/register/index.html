@@ -35,8 +35,27 @@
     <div class="section-inner content">
       <p class="eyebrow">The Book On Publishing</p>
       <h1>Register</h1>
-      <p>New author registration is being connected to the new Git-backed site. Please use the contact page to start a publishing conversation.</p>
-      
+      <p class="lead">Create a free author account to submit manuscripts and track their editorial status.</p>
+      <form class="service-form compact-form" action="/api/register" method="post">
+        <label class="hp-field">Website <input type="text" name="website" autocomplete="off" tabindex="-1"></label>
+        <label>Full name
+          <input name="full_name" autocomplete="name" required>
+        </label>
+        <label>Email
+          <input type="email" name="email" autocomplete="email" required>
+        </label>
+        <label>Phone
+          <input name="phone" autocomplete="tel">
+        </label>
+        <label>Password
+          <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <label>Confirm password
+          <input type="password" name="confirm_password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button class="button" type="submit">Create Account</button>
+      </form>
+      <p>Already registered? <a href="/login/">Log in</a>.</p>
     </div>
   </main>
 

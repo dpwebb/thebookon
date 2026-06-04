@@ -9,9 +9,11 @@ services:
     container_name: thebookon
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3515:80"
+      - "127.0.0.1:3515:3000"
+    volumes:
+      - thebookon_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health | grep -q 'ok'"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -30,4 +32,7 @@ services:
       - traefik.http.middlewares.thebookon-security-headers.headers.stsseconds=300
       - traefik.http.middlewares.thebookon-security-headers.headers.contenttypenosniff=true
       - traefik.http.middlewares.thebookon-security-headers.headers.framedeny=true
-      - traefik.http.services.thebookon.loadbalancer.server.port=80
+      - traefik.http.services.thebookon.loadbalancer.server.port=3000
+
+volumes:
+  thebookon_data:
