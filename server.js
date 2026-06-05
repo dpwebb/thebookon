@@ -574,7 +574,12 @@ app.get("/api/submissions", requireAuth, (req, res) => {
 
 app.use(express.static(PUBLIC_DIR, {
   extensions: ["html"],
-  maxAge: "1h"
+  maxAge: "1h",
+  setHeaders(res, filePath) {
+    if (path.extname(filePath).toLowerCase() === ".html") {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  }
 }));
 
 app.use((req, res) => {
