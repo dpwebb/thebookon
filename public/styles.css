@@ -215,7 +215,9 @@ img {
 .hero-content {
   position: relative;
   z-index: 1;
-  width: min(660px, 100%);
+  width: min(560px, calc(100% - 36px));
+  margin-right: auto;
+  margin-left: max(18px, calc((100vw - 1160px) / 2));
   padding: 92px 0 110px;
 }
 
@@ -241,9 +243,9 @@ h4 {
 }
 
 h1 {
-  max-width: 11ch;
-  font-size: clamp(3.3rem, 7vw, 6.6rem);
-  line-height: 0.96;
+  max-width: 10.8ch;
+  font-size: clamp(2.85rem, 5.4vw, 5.15rem);
+  line-height: 1.02;
 }
 
 h2 {
