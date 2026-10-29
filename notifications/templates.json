@@ -1,0 +1,44 @@
+{
+  "project": "The-Book-On",
+  "name": "The Book On",
+  "from": "admin@thebookon.ca",
+  "origin": "https://thebookon.ca",
+  "templates": {
+    "author.registered": {
+      "audience": "customer",
+      "subject": "Your author account is ready",
+      "message": "Your author account was created. This message does not verify your identity or approve a manuscript.",
+      "path": "/my-author-account/"
+    },
+    "contact.received": {
+      "audience": "customer",
+      "subject": "We received your message",
+      "message": "Your message was recorded for the publishing team. Keep this reference for follow-up.",
+      "path": "/contact-us/"
+    },
+    "manuscript.received": {
+      "audience": "customer",
+      "subject": "Your manuscript was received",
+      "message": "Your manuscript was recorded for editorial review. Receipt does not mean acceptance for publication.",
+      "path": "/my-author-account/"
+    },
+    "intake.contact": {
+      "audience": "operator",
+      "subject": "A publishing inquiry needs review",
+      "message": "A new publishing inquiry is stored in the author-intake records. Review it in the protected operating records.",
+      "path": "/"
+    },
+    "intake.manuscript": {
+      "audience": "operator",
+      "subject": "A manuscript is ready for review",
+      "message": "A new manuscript is stored for editorial review. No manuscript content is included in this email.",
+      "path": "/"
+    },
+    "account.reset_help": {
+      "audience": "operator",
+      "subject": "An author requested account help",
+      "message": "An account-help request is stored for support review. Follow the existing identity-verification process before changing access.",
+      "path": "/"
+    }
+  }
+}

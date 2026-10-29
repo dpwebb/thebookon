@@ -6,7 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js",
+    "test:notifications": "node --test notifications/core.node-tests.cjs notifications/events.node-tests.cjs",
+    "notifications:status": "node notifications/status.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

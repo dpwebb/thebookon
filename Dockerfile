@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
@@ -7,6 +7,7 @@ RUN npm ci --omit=dev
 
 COPY server.js ./
 COPY public ./public
+COPY notifications ./notifications
 
 ENV NODE_ENV=production
 ENV PORT=3000

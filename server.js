@@ -1,3 +1,5 @@
+const { notifications } = require("./notifications/project.cjs");
+notifications.start();
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
@@ -298,7 +300,7 @@ const upload = multer({
   }
 });
 
-app.post("/api/register", (req, res) => {
+app.post("/api/register", async (req, res) => {
   if (isSpam(req)) {
     res.redirect(303, "/");
     return;
@@ -341,6 +343,7 @@ app.post("/api/register", (req, res) => {
   };
   users.push(user);
   writeJson(USERS_FILE, users);
+  await notifications.notify({event:"author.registered",key:user.id,reference:user.id,to:user.email});
   setSessionCookie(req, res, user);
   res.redirect(303, "/my-author-account/?registered=1");
 });
@@ -373,7 +376,7 @@ app.post("/api/logout", (req, res) => {
   res.redirect(303, "/login/?logged-out=1");
 });
 
-app.post("/api/contact", (req, res) => {
+app.post("/api/contact", async (req, res) => {
   if (isSpam(req)) {
     res.redirect(303, "/");
     return;
@@ -408,6 +411,8 @@ app.post("/api/contact", (req, res) => {
     ip: req.ip
   });
   writeJson(CONTACTS_FILE, contacts);
+  await notifications.notify({event:"contact.received",key:id,reference:id,to:email});
+  await notifications.notify({event:"intake.contact",key:id,reference:id});
 
   sendConfirmation(res, confirmationPage({
     title: "Message Received",
@@ -415,7 +420,7 @@ app.post("/api/contact", (req, res) => {
   }));
 });
 
-app.post("/api/password-reset", (req, res) => {
+app.post("/api/password-reset", async (req, res) => {
   if (isSpam(req)) {
     res.redirect(303, "/");
     return;
@@ -443,6 +448,7 @@ app.post("/api/password-reset", (req, res) => {
     ip: req.ip
   });
   writeJson(RESET_REQUESTS_FILE, requests);
+  if(user) await notifications.notify({event:"account.reset_help",key:requests[requests.length-1].id,reference:requests[requests.length-1].id});
 
   sendConfirmation(res, confirmationPage({
     title: "Reset Request Recorded",
@@ -450,7 +456,7 @@ app.post("/api/password-reset", (req, res) => {
   }));
 });
 
-app.post("/api/manuscripts", upload.single("manuscript_file"), (req, res) => {
+app.post("/api/manuscripts", upload.single("manuscript_file"), async (req, res) => {
   if (isSpam(req)) {
     res.redirect(303, "/");
     return;
@@ -524,6 +530,8 @@ app.post("/api/manuscripts", upload.single("manuscript_file"), (req, res) => {
     ip: req.ip
   });
   writeJson(SUBMISSIONS_FILE, submissions);
+  await notifications.notify({event:"manuscript.received",key:id,reference:id,to:email});
+  await notifications.notify({event:"intake.manuscript",key:id,reference:id});
 
   sendConfirmation(res, confirmationPage({
     title: "Submission Received",
@@ -601,6 +609,9 @@ app.use((err, req, res, next) => {
   }));
 });
 
-app.listen(PORT, () => {
-  console.log(`The Book On service listening on ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`The Book On service listening on ${PORT}`);
+  });
+}
+module.exports = { app };
