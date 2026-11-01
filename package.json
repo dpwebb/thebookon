@@ -12,6 +12,11 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "multer": "^2.1.1"
+    "multer": "2.5.0"
+  },
+  "overrides": {
+    "qs": "6.16.1",
+    "proxy-addr": "2.0.8",
+    "body-parser": "1.20.9"
   }
 }
