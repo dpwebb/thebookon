@@ -555,6 +555,53 @@ app.post("/api/manuscripts", upload.single("manuscript_file"), handleAsync(async
   }
 }));
 
+app.post("/api/manuscripts/withdrawal", handleAsync(async (req, res) => {
+  const user = getUserFromRequest(req);
+  if (!user) return res.redirect(303, "/login/");
+  const submissions = readJson(SUBMISSIONS_FILE);
+  const submission = submissions.find((row) => row.id === req.body.id && row.userId === user.id);
+  if (!submission) return res.sendStatus(404);
+  if (!submission.withdrawal) {
+    submission.updatedAt = new Date().toISOString();
+    submission.withdrawal = { requestedAt: submission.updatedAt };
+    writeJson(SUBMISSIONS_FILE, submissions);
+  }
+  if (!submission.withdrawal.resolvedAt) {
+    await notifications.notify({ event: "intake.withdrawal", key: submission.id, reference: submission.id });
+  }
+  res.redirect(303, "/my-author-account/");
+}));
+
+app.post("/internal/editorial/withdrawal", handleAsync(async (req, res) => {
+  const expected = Buffer.from(signPayload("thebookon:editorial-withdrawal:v1"));
+  const supplied = Buffer.from(req.get("X-Editorial-Key") || "");
+  if (req.socket.remoteAddress !== "127.0.0.1" && req.socket.remoteAddress !== "::ffff:127.0.0.1") {
+    return res.sendStatus(404);
+  }
+  if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
+    return res.sendStatus(404);
+  }
+  if (req.body.preAgreementVerified !== true) return res.sendStatus(400);
+  const submissions = readJson(SUBMISSIONS_FILE);
+  const submission = submissions.find((row) => row.id === req.body.id);
+  if (!submission?.withdrawal?.requestedAt) return res.sendStatus(404);
+  const author = readJson(USERS_FILE).find((row) => row.id === submission.userId);
+  if (!author || !validateEmail(author.email)) return res.sendStatus(409);
+  if (!submission.withdrawal.resolvedAt) {
+    submission.updatedAt = new Date().toISOString();
+    submission.withdrawal.resolvedAt = submission.updatedAt;
+    submission.withdrawal.confirmationEmail = author.email;
+    submission.status = "Withdrawn";
+    submission.reviewState = "Closed";
+    writeJson(SUBMISSIONS_FILE, submissions);
+  }
+  const notice = await notifications.notify({
+    event: "manuscript.withdrawn", key: submission.id, reference: submission.id,
+    to: submission.withdrawal.confirmationEmail
+  });
+  res.json({ id: submission.id, status: submission.status, confirmation: notice.status });
+}));
+
 function authorSubmissions(user) {
   return readJson(SUBMISSIONS_FILE)
     .filter((submission) => submission.userId === user.id)
@@ -567,6 +614,7 @@ function authorSubmissions(user) {
       serviceInterest: submission.serviceInterest,
       status: submission.status,
       reviewState: submission.reviewState,
+      withdrawalState: submission.withdrawal?.resolvedAt ? "confirmed" : submission.withdrawal?.requestedAt ? "requested" : null,
       createdAt: submission.createdAt,
       updatedAt: submission.updatedAt,
       fileName: submission.file && submission.file.originalName

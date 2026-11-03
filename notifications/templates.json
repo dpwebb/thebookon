@@ -39,6 +39,18 @@
       "subject": "An author requested account help",
       "message": "An account-help request is stored for support review. Follow the existing identity-verification process before changing access.",
       "path": "/"
+    },
+    "intake.withdrawal": {
+      "audience": "operator",
+      "subject": "A manuscript withdrawal needs editorial review",
+      "message": "Verify the requester and confirm no publishing agreement has been signed before processing the withdrawal.",
+      "path": "/"
+    },
+    "manuscript.withdrawn": {
+      "audience": "customer",
+      "subject": "Your manuscript withdrawal is confirmed",
+      "message": "Editorial confirmed your manuscript was withdrawn and its review was closed.",
+      "path": "/my-author-account/"
     }
   }
 }
