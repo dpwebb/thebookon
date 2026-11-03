@@ -66,7 +66,14 @@
           <p class="eyebrow">${escapeHtml(submission.category) || "Manuscript"}</p>
           <h2>${escapeHtml(submission.title)}</h2>
           <p><strong>Reference:</strong> ${escapeHtml(submission.id)}</p>
-          <p><a href="/contact-us/?withdraw=${encodeURIComponent(submission.id)}">Request withdrawal</a></p>
+          ${submission.withdrawalState === "confirmed"
+            ? "<p>Editorial confirmed that your manuscript was withdrawn.</p>"
+            : submission.withdrawalState === "requested"
+              ? "<p>Withdrawal requested. Editorial review is pending.</p>"
+              : `<form action="/api/manuscripts/withdrawal" method="post">
+                   <input type="hidden" name="id" value="${escapeHtml(submission.id)}">
+                   <button class="button secondary" type="submit">Request withdrawal</button>
+                 </form>`}
           <p><strong>File:</strong> ${escapeHtml(submission.fileName) || "Recorded"}</p>
         </div>
         <dl class="status-grid">

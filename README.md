@@ -46,3 +46,20 @@ PRODUCTION_USER
 PRODUCTION_SSH_PRIVATE_KEY
 PRODUCTION_SSH_PORT
 ```
+
+## Editorial withdrawal
+
+An author can request withdrawal from the dashboard for a manuscript attached
+to their account. Guest submissions continue through support. Before closing
+a request, editorial staff must verify the requester, the destination email,
+and that no publishing agreement has been signed. The authorized production
+operator then runs the following inside the application container:
+
+```bash
+docker exec thebookon node scripts/editorial-withdrawal.cjs <submission-reference> --verified-pre-agreement
+```
+
+The author dashboard confirms the decision immediately. The command reports
+the notification outbox result. If the result is unavailable, resolve the
+outbox issue and run the same command again. Repeating the command preserves
+the original decision timestamp and deduplicates the confirmation.
