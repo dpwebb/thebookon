@@ -43,12 +43,23 @@ function ensureStore() {
   }
 }
 
-function readJson(file, fallback) {
+function readJson(file) {
+  let records;
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return fallback;
+    records = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    console.error("Unable to read author portal store", path.basename(file), error.code || error.name);
+    throw new Error("The author portal is temporarily unable to access its records.");
   }
+  if (!Array.isArray(records)) {
+    console.error("Invalid author portal store", path.basename(file));
+    throw new Error("The author portal is temporarily unable to access its records.");
+  }
+  return records;
+}
+
+function handleAsync(handler) {
+  return (req, res, next) => handler(req, res).catch(next);
 }
 
 function writeJson(file, value) {
@@ -161,14 +172,14 @@ function getUserFromRequest(req) {
   if (!token) return null;
   const [payload, signature] = token.split(".");
   if (!payload || !signature || signPayload(payload) !== signature) return null;
+  let data;
   try {
-    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (!data.exp || data.exp < Date.now()) return null;
-    const users = readJson(USERS_FILE, []);
-    return users.find((user) => user.id === data.uid && user.email === data.email) || null;
+    data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   } catch {
     return null;
   }
+  if (!data || !data.exp || data.exp < Date.now()) return null;
+  return readJson(USERS_FILE).find((user) => user.id === data.uid && user.email === data.email) || null;
 }
 
 function setSessionCookie(req, res, user) {
@@ -300,7 +311,7 @@ const upload = multer({
   }
 });
 
-app.post("/api/register", async (req, res) => {
+app.post("/api/register", handleAsync(async (req, res) => {
   if (isSpam(req)) {
     res.redirect(303, "/");
     return;
@@ -321,7 +332,7 @@ app.post("/api/register", async (req, res) => {
     return;
   }
 
-  const users = readJson(USERS_FILE, []);
+  const users = readJson(USERS_FILE);
   if (users.some((user) => user.email === email)) {
     sendConfirmation(res, confirmationPage({
       title: "Account Already Exists",
@@ -346,7 +357,7 @@ app.post("/api/register", async (req, res) => {
   await notifications.notify({event:"author.registered",key:user.id,reference:user.id,to:user.email});
   setSessionCookie(req, res, user);
   res.redirect(303, "/my-author-account/?registered=1");
-});
+}));
 
 app.post("/api/login", (req, res) => {
   if (isSpam(req)) {
@@ -356,7 +367,7 @@ app.post("/api/login", (req, res) => {
 
   const email = normalizeEmail(req.body.email);
   const password = String(req.body.password || "");
-  const users = readJson(USERS_FILE, []);
+  const users = readJson(USERS_FILE);
   const user = users.find((candidate) => candidate.email === email);
   if (!user || !verifyPassword(password, user.passwordHash)) {
     sendConfirmation(res, confirmationPage({
@@ -376,7 +387,7 @@ app.post("/api/logout", (req, res) => {
   res.redirect(303, "/login/?logged-out=1");
 });
 
-app.post("/api/contact", async (req, res) => {
+app.post("/api/contact", handleAsync(async (req, res) => {
   if (isSpam(req)) {
     res.redirect(303, "/");
     return;
@@ -397,7 +408,7 @@ app.post("/api/contact", async (req, res) => {
     return;
   }
 
-  const contacts = readJson(CONTACTS_FILE, []);
+  const contacts = readJson(CONTACTS_FILE);
   const id = createId("msg");
   contacts.push({
     id,
@@ -418,9 +429,9 @@ app.post("/api/contact", async (req, res) => {
     title: "Message Received",
     body: `<p>Thank you. Your message has been recorded and our team can follow up using the contact details you provided.</p><p><strong>Reference:</strong> ${escapeHtml(id)}</p><p><a class="button" href="/manuscript-submission/">Submit a manuscript</a> <a class="button secondary" href="/">Return home</a></p>`
   }));
-});
+}));
 
-app.post("/api/password-reset", async (req, res) => {
+app.post("/api/password-reset", handleAsync(async (req, res) => {
   if (isSpam(req)) {
     res.redirect(303, "/");
     return;
@@ -436,9 +447,9 @@ app.post("/api/password-reset", async (req, res) => {
     return;
   }
 
-  const users = readJson(USERS_FILE, []);
+  const users = readJson(USERS_FILE);
   const user = users.find((candidate) => candidate.email === email);
-  const requests = readJson(RESET_REQUESTS_FILE, []);
+  const requests = readJson(RESET_REQUESTS_FILE);
   requests.push({
     id: createId("rst"),
     email,
@@ -454,99 +465,99 @@ app.post("/api/password-reset", async (req, res) => {
     title: "Reset Request Recorded",
     body: "<p>If the email address belongs to an author account, a reset-help request has been recorded for support review. For urgent access help, contact support@thebookon.ca.</p><p><a class=\"button\" href=\"/login/\">Return to login</a></p>"
   }));
-});
+}));
 
-app.post("/api/manuscripts", upload.single("manuscript_file"), async (req, res) => {
-  if (isSpam(req)) {
-    res.redirect(303, "/");
-    return;
-  }
+app.post("/api/manuscripts", upload.single("manuscript_file"), handleAsync(async (req, res) => {
+  let saved = false;
+  try {
+    if (isSpam(req)) {
+      res.redirect(303, "/");
+      return;
+    }
 
-  const currentUser = getUserFromRequest(req);
-  const authorName = cleanText(req.body.author_name || (currentUser && currentUser.fullName), 160);
-  const email = normalizeEmail(req.body.email || (currentUser && currentUser.email));
-  const phone = cleanText(req.body.phone || (currentUser && currentUser.phone), 80);
-  const title = cleanText(req.body.title, 240);
-  const category = cleanText(req.body.category, 120);
-  const stage = cleanText(req.body.stage, 120);
-  const serviceInterest = cleanText(req.body.service_interest, 160);
-  const audience = cleanLongText(req.body.audience, 3000);
-  const synopsis = cleanLongText(req.body.synopsis, 8000);
-  const inspiration = cleanLongText(req.body.inspiration, 4000);
-  const rightsConfirmed = req.body.rights_confirm === "yes";
-  const termsConfirmed = req.body.terms_confirm === "yes";
+    const currentUser = getUserFromRequest(req);
+    const authorName = cleanText(req.body.author_name || (currentUser && currentUser.fullName), 160);
+    const email = normalizeEmail(req.body.email || (currentUser && currentUser.email));
+    const phone = cleanText(req.body.phone || (currentUser && currentUser.phone), 80);
+    const title = cleanText(req.body.title, 240);
+    const category = cleanText(req.body.category, 120);
+    const stage = cleanText(req.body.stage, 120);
+    const serviceInterest = cleanText(req.body.service_interest, 160);
+    const audience = cleanLongText(req.body.audience, 3000);
+    const synopsis = cleanLongText(req.body.synopsis, 8000);
+    const inspiration = cleanLongText(req.body.inspiration, 4000);
+    const rightsConfirmed = req.body.rights_confirm === "yes";
+    const termsConfirmed = req.body.terms_confirm === "yes";
 
-  const missing = [];
-  if (!authorName) missing.push("author name");
-  if (!validateEmail(email)) missing.push("valid email");
-  if (!title) missing.push("book title");
-  if (!category) missing.push("category");
-  if (!stage) missing.push("project stage");
-  if (!serviceInterest) missing.push("publishing path");
-  if (!audience) missing.push("target reader");
-  if (!synopsis) missing.push("synopsis");
-  if (!req.file) missing.push("manuscript or proposal file");
-  if (!rightsConfirmed) missing.push("rights confirmation");
-  if (!termsConfirmed) missing.push("terms confirmation");
+    const missing = [];
+    if (!authorName) missing.push("author name");
+    if (!validateEmail(email)) missing.push("valid email");
+    if (!title) missing.push("book title");
+    if (!category) missing.push("category");
+    if (!stage) missing.push("project stage");
+    if (!serviceInterest) missing.push("publishing path");
+    if (!audience) missing.push("target reader");
+    if (!synopsis) missing.push("synopsis");
+    if (!req.file) missing.push("manuscript or proposal file");
+    if (!rightsConfirmed) missing.push("rights confirmation");
+    if (!termsConfirmed) missing.push("terms confirmation");
 
-  if (missing.length) {
-    if (req.file) fs.rmSync(req.file.path, { force: true });
+    if (missing.length) {
+      sendConfirmation(res, confirmationPage({
+        title: "Submission Needs Attention",
+        status: 400,
+        body: `<p>Please complete the missing item${missing.length === 1 ? "" : "s"}: ${escapeHtml(missing.join(", "))}.</p><p><a class="button" href="/manuscript-submission/">Return to submission</a></p>`
+      }));
+      return;
+    }
+
+    const submissions = readJson(SUBMISSIONS_FILE);
+    const id = req.submissionId || createId("ms");
+    const now = new Date().toISOString();
+    const relativeUploadPath = path.relative(DATA_DIR, req.file.path).replaceAll(path.sep, "/");
+    submissions.push({
+      id,
+      userId: currentUser ? currentUser.id : null,
+      authorName,
+      email,
+      phone,
+      title,
+      category,
+      stage,
+      serviceInterest,
+      audience,
+      synopsis,
+      inspiration,
+      status: "Pending",
+      reviewState: "Under Review",
+      createdAt: now,
+      updatedAt: now,
+      file: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        relativePath: relativeUploadPath,
+        size: req.file.size,
+        mimeType: req.file.mimetype
+      },
+      ip: req.ip
+    });
+    writeJson(SUBMISSIONS_FILE, submissions);
+    saved = true;
+    await notifications.notify({event:"manuscript.received",key:id,reference:id,to:email});
+    await notifications.notify({event:"intake.manuscript",key:id,reference:id});
+
     sendConfirmation(res, confirmationPage({
-      title: "Submission Needs Attention",
-      status: 400,
-      body: `<p>Please complete the missing item${missing.length === 1 ? "" : "s"}: ${escapeHtml(missing.join(", "))}.</p><p><a class="button" href="/manuscript-submission/">Return to submission</a></p>`
+      title: "Submission Received",
+      body: `<p>Your manuscript has been received and logged for editorial review.</p><p><strong>Reference:</strong> ${escapeHtml(id)}</p><p>Initial status: <strong>Pending</strong>. Review state: <strong>Under Review</strong>.</p><p>If you submitted while logged in, this will appear in your dashboard. If you submitted as a guest, keep this reference and contact support to request a status update or withdrawal.</p><p><a class="button" href="/my-author-account/">View dashboard</a> <a class="button secondary" href="/contact-us/">Contact support</a></p>`
     }));
-    return;
+  } finally {
+    if (req.file && !saved) fs.rmSync(req.file.path, { force: true });
   }
+}));
 
-  const submissions = readJson(SUBMISSIONS_FILE, []);
-  const id = req.submissionId || createId("ms");
-  const now = new Date().toISOString();
-  const relativeUploadPath = path.relative(DATA_DIR, req.file.path).replaceAll(path.sep, "/");
-  submissions.push({
-    id,
-    userId: currentUser ? currentUser.id : null,
-    authorName,
-    email,
-    phone,
-    title,
-    category,
-    stage,
-    serviceInterest,
-    audience,
-    synopsis,
-    inspiration,
-    status: "Pending",
-    reviewState: "Under Review",
-    createdAt: now,
-    updatedAt: now,
-    file: {
-      originalName: req.file.originalname,
-      storedName: req.file.filename,
-      relativePath: relativeUploadPath,
-      size: req.file.size,
-      mimeType: req.file.mimetype
-    },
-    ip: req.ip
-  });
-  writeJson(SUBMISSIONS_FILE, submissions);
-  await notifications.notify({event:"manuscript.received",key:id,reference:id,to:email});
-  await notifications.notify({event:"intake.manuscript",key:id,reference:id});
-
-  sendConfirmation(res, confirmationPage({
-    title: "Submission Received",
-    body: `<p>Your manuscript has been received and logged for editorial review.</p><p><strong>Reference:</strong> ${escapeHtml(id)}</p><p>Initial status: <strong>Pending</strong>. Review state: <strong>Under Review</strong>.</p><p>If you submitted while logged in, this will appear in your dashboard. If you submitted as a guest, create an account with ${escapeHtml(email)} to see it there.</p><p><a class="button" href="/my-author-account/">View dashboard</a> <a class="button secondary" href="/contact-us/">Contact support</a></p>`
-  }));
-});
-
-app.get("/api/session", (req, res) => {
-  const user = getUserFromRequest(req);
-  if (!user) {
-    res.json({ authenticated: false, submissions: [] });
-    return;
-  }
-  const submissions = readJson(SUBMISSIONS_FILE, [])
-    .filter((submission) => submission.userId === user.id || normalizeEmail(submission.email) === user.email)
+function authorSubmissions(user) {
+  return readJson(SUBMISSIONS_FILE)
+    .filter((submission) => submission.userId === user.id)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .map((submission) => ({
       id: submission.id,
@@ -561,6 +572,20 @@ app.get("/api/session", (req, res) => {
       fileName: submission.file && submission.file.originalName
     }));
 
+}
+
+app.use(["/api/session", "/api/submissions"], (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
+app.get("/api/session", (req, res) => {
+  const user = getUserFromRequest(req);
+  if (!user) {
+    res.json({ authenticated: false, submissions: [] });
+    return;
+  }
+
   res.json({
     authenticated: true,
     user: {
@@ -569,15 +594,12 @@ app.get("/api/session", (req, res) => {
       email: user.email,
       phone: user.phone || ""
     },
-    submissions
+    submissions: authorSubmissions(user)
   });
 });
 
 app.get("/api/submissions", requireAuth, (req, res) => {
-  const submissions = readJson(SUBMISSIONS_FILE, [])
-    .filter((submission) => submission.userId === req.user.id || normalizeEmail(submission.email) === req.user.email)
-    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  res.json({ submissions });
+  res.json({ submissions: authorSubmissions(req.user) });
 });
 
 app.use(express.static(PUBLIC_DIR, {
