@@ -89,6 +89,7 @@
       <div class="notice">
         <p>Signed in as <strong>${escapeHtml(session.user.fullName)}</strong> (${escapeHtml(session.user.email)}).</p>
         <form action="/api/logout" method="post"><button class="button secondary" type="submit">Log out</button></form>
+        <p><a class="button secondary" href="/account/mfa">Two-factor authentication</a></p>
       </div>
       ${rows || `
         <div class="notice">
