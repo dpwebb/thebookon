@@ -7,6 +7,7 @@ RUN npm ci --omit=dev \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 COPY server.js ./
+COPY helpers ./helpers
 COPY scripts/editorial-withdrawal.cjs ./scripts/
 COPY public ./public
 COPY notifications ./notifications
