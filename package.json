@@ -14,7 +14,7 @@
     "notifications:status": "node notifications/status.cjs"
   },
   "dependencies": {
-    "@compnd/cgsso-adapter": "file:..\\..\\governance\\portfolio\\sso\\adapter",
+    "@compnd/cgsso-adapter": "file:vendor/cgss-adapter",
     "express": "^4.19.2",
     "multer": "2.5.0"
   },

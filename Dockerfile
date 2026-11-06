@@ -3,6 +3,7 @@ FROM node:24-alpine
 WORKDIR /app
 
 COPY package*.json ./
+COPY vendor ./vendor
 RUN npm ci --omit=dev \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 

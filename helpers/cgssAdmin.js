@@ -32,7 +32,7 @@ async function modules() {
   try {
     adapter = await import("@compnd/cgsso-adapter");
   } catch {
-    adapter = await import(pathToFileURL(path.resolve(__dirname, "../../../governance/portfolio/sso/adapter/index.mjs")).href);
+    adapter = await import(pathToFileURL(path.resolve(__dirname, "../vendor/cgss-adapter/index.mjs")).href);
   }
   return adapter;
 }

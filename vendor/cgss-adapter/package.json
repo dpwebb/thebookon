@@ -1,0 +1,14 @@
+{
+  "name": "@compnd/cgsso-adapter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared OIDC adapter for the Compnd.Systems admin CGSSO path.",
+  "exports": "./index.mjs",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
