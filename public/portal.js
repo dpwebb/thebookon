@@ -76,6 +76,7 @@
       <div class="notice">
         <p>Signed in as <strong>${text(session.user.fullName)}</strong> (${text(session.user.email)}).</p>
         <form action="/api/logout" method="post"><button class="button secondary" type="submit">Log out</button></form>
+        <p><a class="button secondary" href="/account/mfa">Two-factor authentication</a></p>
       </div>
       ${rows || `
         <div class="notice">

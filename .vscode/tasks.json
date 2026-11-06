@@ -1,0 +1,72 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Local: The Book On UI",
+      "detail": "Start the The Book On user interface on http://127.0.0.1:3515",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        ".vscode/run-local.mjs",
+        "ui"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": false
+      }
+    },
+    {
+      "label": "Local: Preview The Book On",
+      "detail": "Open http://127.0.0.1:3515 in the VS Code browser",
+      "type": "shell",
+      "command": "code",
+      "args": [
+        "--open-url",
+        "http://127.0.0.1:3515"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "Local: Test data (The Book On)",
+      "detail": "npm run testdata:seed",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "scripts/seed-synthetic.mjs"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Local: Admin account (The Book On)",
+      "detail": "npm run admin:seed",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "scripts/seed-admin.mjs"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    }
+  ]
+}

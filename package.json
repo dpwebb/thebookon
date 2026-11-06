@@ -6,7 +6,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "admin:seed": "node scripts/seed-admin.mjs",
+    "testdata:seed": "node scripts/seed-synthetic.mjs",
     "check": "node --check server.js",
+    "test:mfa": "node --test tests/mfa.test.mjs",
     "test:notifications": "node --test notifications/core.node-tests.cjs notifications/events.node-tests.cjs",
     "notifications:status": "node notifications/status.cjs"
   },

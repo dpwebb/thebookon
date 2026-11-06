@@ -6,6 +6,7 @@ const path = require("path");
 
 const express = require("express");
 const multer = require("multer");
+const mfa = require("./helpers/mfa");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -18,6 +19,7 @@ const USERS_FILE = path.join(DATA_DIR, "users.json");
 const SUBMISSIONS_FILE = path.join(DATA_DIR, "submissions.json");
 const CONTACTS_FILE = path.join(DATA_DIR, "contacts.json");
 const RESET_REQUESTS_FILE = path.join(DATA_DIR, "password-reset-requests.json");
+const MFA_CHALLENGES_FILE = path.join(DATA_DIR, "mfa-challenges.json");
 const SECRET_FILE = path.join(DATA_DIR, "session-secret.txt");
 
 const allowedManuscriptExtensions = new Set([
@@ -36,7 +38,7 @@ function ensureDir(dir) {
 function ensureStore() {
   ensureDir(DATA_DIR);
   ensureDir(UPLOAD_DIR);
-  for (const file of [USERS_FILE, SUBMISSIONS_FILE, CONTACTS_FILE, RESET_REQUESTS_FILE]) {
+  for (const file of [USERS_FILE, SUBMISSIONS_FILE, CONTACTS_FILE, RESET_REQUESTS_FILE, MFA_CHALLENGES_FILE]) {
     if (!fs.existsSync(file)) {
       fs.writeFileSync(file, "[]\n", "utf8");
     }
@@ -253,6 +255,234 @@ function requireAuth(req, res, next) {
   next();
 }
 
+const MFA_ISSUER = process.env.MFA_ISSUER || "The Book On Publishing";
+const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const MFA_ENROLLMENT_TTL_MS = 10 * 60 * 1000;
+const MFA_LOCK_MS = 15 * 60 * 1000;
+
+function saveUser(user) {
+  const users = readJson(USERS_FILE, []);
+  const index = users.findIndex((candidate) => candidate.id === user.id);
+  if (index !== -1) users[index] = user;
+  writeJson(USERS_FILE, users);
+}
+
+function mfaEnabled(user) {
+  return Boolean(user && user.mfa && user.mfa.enabledAt && user.mfa.secret);
+}
+
+function issueMfaChallenge(userId) {
+  const { token, hash } = mfa.newChallengeToken();
+  const now = Date.now();
+  const challenges = readJson(MFA_CHALLENGES_FILE, [])
+    .filter((challenge) => challenge.expiresAt > now && challenge.userId !== userId);
+  challenges.push({
+    hash,
+    userId,
+    expiresAt: now + MFA_CHALLENGE_TTL_MS,
+    attempts: 0,
+    createdAt: now
+  });
+  writeJson(MFA_CHALLENGES_FILE, challenges);
+  return token;
+}
+
+function findMfaChallenge(token) {
+  if (!token || String(token).length > 200) return null;
+  const hash = mfa.sha256Hex(token);
+  const now = Date.now();
+  const challenges = readJson(MFA_CHALLENGES_FILE, []);
+  const current = challenges.find((challenge) => challenge.hash === hash);
+  const active = challenges.filter((challenge) => challenge.expiresAt > now);
+  if (active.length !== challenges.length) writeJson(MFA_CHALLENGES_FILE, active);
+  return current && current.expiresAt > now ? current : null;
+}
+
+function updateMfaChallenge(challenge, changes) {
+  const challenges = readJson(MFA_CHALLENGES_FILE, []);
+  const index = challenges.findIndex((candidate) => candidate.hash === challenge.hash);
+  if (index !== -1) {
+    challenges[index] = { ...challenges[index], ...changes };
+    writeJson(MFA_CHALLENGES_FILE, challenges);
+  }
+}
+
+function removeMfaChallenges(userId) {
+  const challenges = readJson(MFA_CHALLENGES_FILE, [])
+    .filter((challenge) => challenge.userId !== userId);
+  writeJson(MFA_CHALLENGES_FILE, challenges);
+}
+
+function issueBackupCodes(user) {
+  const codes = mfa.generateBackupCodes();
+  user.mfa = user.mfa || {};
+  user.mfa.backupCodes = codes.map((code) => ({
+    hash: mfa.backupCodeHash(user.id, code),
+    usedAt: null,
+    createdAt: Date.now()
+  }));
+  return codes;
+}
+
+function verifyUserSecondFactor(user, code, backupCode) {
+  const state = user.mfa;
+  if (!state || !state.enabledAt || !state.secret) return null;
+  if (code) {
+    try {
+      const step = mfa.matchTotp(
+        mfa.decryptSecret(state.secret, sessionSecret),
+        code,
+        Number(state.lastUsedStep ?? -1)
+      );
+      if (step !== null) {
+        state.lastUsedStep = step;
+        return "totp";
+      }
+    } catch {
+      return null;
+    }
+  }
+  if (backupCode) {
+    const normalized = mfa.normalizeBackupCode(backupCode);
+    if (!/^[A-F0-9]{16}$/.test(normalized)) return null;
+    const hash = mfa.backupCodeHash(user.id, normalized);
+    const entry = (state.backupCodes || []).find(
+      (candidate) => !candidate.usedAt && candidate.hash === hash
+    );
+    if (entry) {
+      entry.usedAt = Date.now();
+      return "backup";
+    }
+  }
+  return null;
+}
+
+function mfaLocked(user) {
+  return Boolean(user.mfa && user.mfa.lockedUntil && user.mfa.lockedUntil > Date.now());
+}
+
+function registerMfaFailure(user) {
+  user.mfa = user.mfa || {};
+  user.mfa.failedAttempts = Number(user.mfa.failedAttempts || 0) + 1;
+  if (user.mfa.failedAttempts >= mfa.MAX_ATTEMPTS) {
+    user.mfa.lockedUntil = Date.now() + MFA_LOCK_MS;
+    user.mfa.failedAttempts = 0;
+  }
+}
+
+function clearMfaFailures(user) {
+  if (!user.mfa) return;
+  user.mfa.failedAttempts = 0;
+  user.mfa.lockedUntil = 0;
+}
+
+function mfaLoginPage({ token, error }) {
+  return confirmationPage({
+    title: "Two-Factor Verification",
+    status: error ? 401 : 200,
+    body: `
+      ${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}
+      <p>Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <form action="/api/login/mfa" method="post">
+        <input type="hidden" name="challenge" value="${escapeHtml(token || "")}">
+        <p><label>Authenticator code<br><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"></label></p>
+        <p><label>Or a backup code<br><input name="backup_code" autocomplete="one-time-code" maxlength="64"></label></p>
+        <p><button class="button" type="submit">Verify and sign in</button></p>
+      </form>
+      <p><a href="/login/">Start over</a></p>
+    `
+  });
+}
+
+function accountMfaPage({ user, error, message, backupCodes }) {
+  const state = user.mfa || {};
+  const enabled = mfaEnabled(user);
+  const pending =
+    state.pendingSecret && Number(state.pendingExpiresAt || 0) > Date.now();
+  const remaining = (state.backupCodes || []).filter((code) => !code.usedAt).length;
+
+  let body = "";
+  if (error) body += `<p role="alert">${escapeHtml(error)}</p>`;
+  if (message) body += `<p role="status">${escapeHtml(message)}</p>`;
+  body += `<p>Status: <strong>${enabled ? "Enabled" : "Not enabled"}</strong>${
+    enabled ? ` &middot; ${remaining} backup code${remaining === 1 ? "" : "s"} remaining` : ""
+  }</p>`;
+
+  if (backupCodes && backupCodes.length) {
+    body += `<p><strong>Save these backup codes now.</strong> Each code works once and they will not be shown again.</p>
+      <ul>${backupCodes.map((code) => `<li><code>${escapeHtml(code)}</code></li>`).join("")}</ul>`;
+  }
+
+  if (!backupCodes && pending) {
+    let secret = "";
+    let uri = "";
+    try {
+      secret = mfa.decryptSecret(state.pendingSecret, sessionSecret);
+      uri = mfa.buildOtpAuthUrl({ issuer: MFA_ISSUER, accountName: user.email, secret });
+    } catch {
+      body += `<p role="alert">The pending authenticator setup could not be read. Start setup again.</p>`;
+    }
+    if (secret) {
+      body += `<p>Scan this QR code with your authenticator app, or enter the setup key manually.</p>
+        <div id="mfa-qr" data-uri="${escapeHtml(uri)}" style="width:200px;height:200px"></div>
+        <p>Setup key: <code>${escapeHtml(secret)}</code></p>
+        <form action="/account/mfa/confirm" method="post">
+          <p><label>Six-digit code<br><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label></p>
+          <p><button class="button" type="submit">Enable two-factor authentication</button></p>
+        </form>
+        <script src="/qrcode-generator.js"></script>
+        <script>
+          (function () {
+            var el = document.getElementById("mfa-qr");
+            if (!el || !window.qrcode) return;
+            try {
+              var qr = qrcode(0, "M");
+              qr.addData(el.getAttribute("data-uri"));
+              qr.make();
+              el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 4 });
+            } catch (error) {
+              el.textContent = "QR code unavailable. Use the setup key shown below.";
+            }
+          }());
+        </script>`;
+    }
+  }
+
+  if (!backupCodes && !enabled && !pending) {
+    body += `<form action="/account/mfa/setup" method="post">
+      <p><label>Confirm your password<br><input type="password" name="password" autocomplete="current-password" required></label></p>
+      <p><button class="button" type="submit">Set up authenticator app</button></p>
+    </form>`;
+  }
+
+  if (!backupCodes && enabled) {
+    body += `<form action="/account/mfa/backup-codes" method="post">
+      <p><strong>Replace backup codes</strong></p>
+      <p><label>Password<br><input type="password" name="password" autocomplete="current-password" required></label></p>
+      <p><label>Authenticator code<br><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label></p>
+      <p><label>Or a backup code<br><input name="backup_code" autocomplete="one-time-code" maxlength="64"></label></p>
+      <p><button class="button secondary" type="submit">Replace backup codes</button></p>
+    </form>
+    <form action="/account/mfa/disable" method="post">
+      <p><strong>Turn off two-factor authentication</strong></p>
+      <p><label>Password<br><input type="password" name="password" autocomplete="current-password" required></label></p>
+      <p><label>Authenticator code<br><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label></p>
+      <p><label>Or a backup code<br><input name="backup_code" autocomplete="one-time-code" maxlength="64"></label></p>
+      <p><button class="button secondary" type="submit">Turn off two-factor authentication</button></p>
+    </form>`;
+  }
+
+  body += `<p><a href="/my-author-account/">Back to your account</a></p>`;
+  return confirmationPage({ title: "Account Security", body });
+}
+
+function sendAccountMfaPage(res, user, options = {}, status = 200) {
+  res.setHeader("Cache-Control", "no-store");
+  res.status(status).type("html").send(accountMfaPage({ user, ...options }).html);
+}
+
+
+
 app.set("trust proxy", true);
 app.disable("x-powered-by");
 app.use((req, res, next) => {
@@ -367,6 +597,96 @@ app.post("/api/login", (req, res) => {
     return;
   }
 
+  if (mfaEnabled(user)) {
+    if (mfaLocked(user)) {
+      sendConfirmation(res, confirmationPage({
+        title: "Login Temporarily Locked",
+        status: 429,
+        body: "<p>Too many verification attempts. Wait 15 minutes and try again.</p><p><a class=\"button\" href=\"/login/\">Return to login</a></p>"
+      }));
+      return;
+    }
+    const challengeToken = issueMfaChallenge(user.id);
+    res.setHeader("Cache-Control", "no-store");
+    sendConfirmation(res, mfaLoginPage({ token: challengeToken }));
+    return;
+  }
+
+  setSessionCookie(req, res, user);
+  res.redirect(303, "/my-author-account/?login=1");
+});
+
+app.post("/api/login/mfa", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const token = String(req.body.challenge || "");
+  const challenge = findMfaChallenge(token);
+
+  if (!challenge) {
+    sendConfirmation(res, confirmationPage({
+      title: "Verification Expired",
+      status: 401,
+      body: "<p>The sign-in challenge expired. Enter your password again to continue.</p><p><a class=\"button\" href=\"/login/\">Return to login</a></p>"
+    }));
+    return;
+  }
+
+  const users = readJson(USERS_FILE, []);
+  const user = users.find((candidate) => candidate.id === challenge.userId);
+  if (!user || !mfaEnabled(user)) {
+    removeMfaChallenges(challenge.userId);
+    sendConfirmation(res, confirmationPage({
+      title: "Verification Unavailable",
+      status: 401,
+      body: "<p>Two-factor authentication is not enabled for this account.</p><p><a class=\"button\" href=\"/login/\">Return to login</a></p>"
+    }));
+    return;
+  }
+
+  if (mfaLocked(user)) {
+    removeMfaChallenges(user.id);
+    sendConfirmation(res, confirmationPage({
+      title: "Login Temporarily Locked",
+      status: 429,
+      body: "<p>Too many verification attempts. Wait 15 minutes and try again.</p><p><a class=\"button\" href=\"/login/\">Return to login</a></p>"
+    }));
+    return;
+  }
+
+  if (Number(challenge.attempts || 0) >= mfa.MAX_ATTEMPTS) {
+    removeMfaChallenges(user.id);
+    sendConfirmation(res, confirmationPage({
+      title: "Verification Expired",
+      status: 401,
+      body: "<p>Too many attempts were made for this challenge.</p><p><a class=\"button\" href=\"/login/\">Return to login</a></p>"
+    }));
+    return;
+  }
+
+  const method = verifyUserSecondFactor(
+    user,
+    cleanText(req.body.code || "", 10),
+    cleanText(req.body.backup_code || "", 64)
+  );
+
+  if (!method) {
+    registerMfaFailure(user);
+    saveUser(user);
+    const attempts = Number(challenge.attempts || 0) + 1;
+    if (attempts >= mfa.MAX_ATTEMPTS) {
+      removeMfaChallenges(user.id);
+    } else {
+      updateMfaChallenge(challenge, { attempts });
+    }
+    sendConfirmation(res, mfaLoginPage({
+      token,
+      error: "That code was not accepted. Check your authenticator and try again."
+    }));
+    return;
+  }
+
+  clearMfaFailures(user);
+  saveUser(user);
+  removeMfaChallenges(user.id);
   setSessionCookie(req, res, user);
   res.redirect(303, "/my-author-account/?login=1");
 });
@@ -578,6 +898,137 @@ app.get("/api/submissions", requireAuth, (req, res) => {
     .filter((submission) => submission.userId === req.user.id || normalizeEmail(submission.email) === req.user.email)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   res.json({ submissions });
+});
+
+function accountUser(req, res) {
+  const user = getUserFromRequest(req);
+  if (!user) {
+    res.redirect(303, "/login/");
+    return null;
+  }
+  return user;
+}
+
+app.get("/account/mfa", (req, res) => {
+  const user = accountUser(req, res);
+  if (!user) return;
+  sendAccountMfaPage(res, user);
+});
+
+app.post("/account/mfa/setup", (req, res) => {
+  const user = accountUser(req, res);
+  if (!user) return;
+  if (mfaEnabled(user)) {
+    sendAccountMfaPage(res, user, {
+      error: "An authenticator is already enabled. Turn it off before setting up a new one."
+    }, 409);
+    return;
+  }
+  if (!verifyPassword(String(req.body.password || ""), user.passwordHash)) {
+    sendAccountMfaPage(res, user, { error: "Password is incorrect." }, 401);
+    return;
+  }
+  user.mfa = user.mfa || {};
+  user.mfa.pendingSecret = mfa.encryptSecret(mfa.generateSecret(), sessionSecret);
+  user.mfa.pendingExpiresAt = Date.now() + MFA_ENROLLMENT_TTL_MS;
+  saveUser(user);
+  res.redirect(303, "/account/mfa?setup=1");
+});
+
+app.post("/account/mfa/confirm", (req, res) => {
+  const user = accountUser(req, res);
+  if (!user) return;
+  const state = user.mfa || {};
+  if (!state.pendingSecret || Number(state.pendingExpiresAt || 0) <= Date.now()) {
+    sendAccountMfaPage(res, user, {
+      error: "Authenticator setup expired. Start setup again."
+    }, 410);
+    return;
+  }
+  let step = null;
+  try {
+    step = mfa.matchTotp(
+      mfa.decryptSecret(state.pendingSecret, sessionSecret),
+      cleanText(req.body.code || "", 10),
+      -1
+    );
+  } catch {
+    step = null;
+  }
+  if (step === null) {
+    sendAccountMfaPage(res, user, {
+      error: "That authenticator code is not valid."
+    }, 400);
+    return;
+  }
+  user.mfa = {
+    secret: state.pendingSecret,
+    enabledAt: Date.now(),
+    lastUsedStep: step,
+    failedAttempts: 0,
+    lockedUntil: 0
+  };
+  const backupCodes = issueBackupCodes(user);
+  saveUser(user);
+  removeMfaChallenges(user.id);
+  sendAccountMfaPage(res, user, {
+    message: "Two-factor authentication is enabled.",
+    backupCodes
+  });
+});
+
+app.post("/account/mfa/disable", (req, res) => {
+  const user = accountUser(req, res);
+  if (!user) return;
+  if (!verifyPassword(String(req.body.password || ""), user.passwordHash)) {
+    sendAccountMfaPage(res, user, { error: "Password is incorrect." }, 401);
+    return;
+  }
+  if (!mfaEnabled(user)) {
+    sendAccountMfaPage(res, user, { error: "Two-factor authentication is not enabled." }, 409);
+    return;
+  }
+  const method = verifyUserSecondFactor(
+    user,
+    cleanText(req.body.code || "", 10),
+    cleanText(req.body.backup_code || "", 64)
+  );
+  if (!method) {
+    sendAccountMfaPage(res, user, {
+      error: "That authenticator or backup code is not valid."
+    }, 401);
+    return;
+  }
+  delete user.mfa;
+  saveUser(user);
+  removeMfaChallenges(user.id);
+  sendAccountMfaPage(res, user, { message: "Two-factor authentication is turned off." });
+});
+
+app.post("/account/mfa/backup-codes", (req, res) => {
+  const user = accountUser(req, res);
+  if (!user) return;
+  if (!verifyPassword(String(req.body.password || ""), user.passwordHash)) {
+    sendAccountMfaPage(res, user, { error: "Password is incorrect." }, 401);
+    return;
+  }
+  const method = verifyUserSecondFactor(
+    user,
+    cleanText(req.body.code || "", 10),
+    cleanText(req.body.backup_code || "", 64)
+  );
+  if (!method) {
+    sendAccountMfaPage(res, user, {
+      error: "That authenticator or backup code is not valid."
+    }, 401);
+    return;
+  }
+  const backupCodes = issueBackupCodes(user);
+  saveUser(user);
+  sendAccountMfaPage(res, user, {
+    message: "New backup codes issued.",
+    backupCodes
+  });
 });
 
 app.use(express.static(PUBLIC_DIR, {

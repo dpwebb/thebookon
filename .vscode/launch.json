@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Local: The Book On UI",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "node .vscode/run-local.mjs ui",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": []
+}

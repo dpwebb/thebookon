@@ -1,0 +1,16 @@
+{
+  "workbench.browser.openLocalhostLinks": true,
+  "simpleBrowser.focusLockIndicator.enabled": true,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/.local": true,
+    "**/release-evidence": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.local/**": true
+  }
+}
