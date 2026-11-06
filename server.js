@@ -31,6 +31,9 @@ const allowedManuscriptExtensions = new Set([
   ".txt"
 ]);
 
+const ADMIN_SUBMISSION_STATUSES = ["Pending", "In Review", "Editorial Review", "On Hold", "Accepted", "Declined"];
+const ADMIN_REVIEW_STATES = ["Under Review", "Needs Information", "Ready for Decision", "Accepted", "Declined"];
+
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
@@ -143,6 +146,7 @@ function encodeSession(user) {
   const payload = Buffer.from(JSON.stringify({
     uid: user.id,
     email: user.email,
+    mfa: mfaEnabled(user),
     exp: Date.now() + 7 * 24 * 60 * 60 * 1000
   })).toString("base64url");
   return `${payload}.${signPayload(payload)}`;
@@ -167,7 +171,14 @@ function getUserFromRequest(req) {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!data.exp || data.exp < Date.now()) return null;
     const users = readJson(USERS_FILE, []);
-    return users.find((user) => user.id === data.uid && user.email === data.email) || null;
+    const user = users.find((candidate) => candidate.id === data.uid && candidate.email === data.email);
+    if (!user) return null;
+    Object.defineProperty(user, "__sessionMfa", {
+      value: data.mfa === true,
+      enumerable: false,
+      configurable: true
+    });
+    return user;
   } catch {
     return null;
   }
@@ -253,6 +264,145 @@ function requireAuth(req, res, next) {
   }
   req.user = user;
   next();
+}
+
+function adminDeniedPage(res, title, body) {
+  adminHeaders(res);
+  sendConfirmation(res, confirmationPage({ title, status: 403, body }));
+}
+
+function adminPageUser(req, res) {
+  const user = getUserFromRequest(req);
+  if (!user) {
+    res.redirect(303, "/login/");
+    return null;
+  }
+  if (user.internalAdmin !== true) {
+    adminDeniedPage(res, "Administrator Access Required", "<p>This account is not an administrator for The Book On.</p><p><a class=\"button\" href=\"/my-author-account/\">Return to your account</a></p>");
+    return null;
+  }
+  if (!mfaEnabled(user) || user.__sessionMfa !== true) {
+    adminDeniedPage(res, "Administrator MFA Required", "<p>Two-factor authentication must be enabled and verified in this session before the admin workspace can be opened.</p><p><a class=\"button\" href=\"/account/mfa\">Set up two-factor authentication</a></p><p><a class=\"button secondary\" href=\"/login/\">Sign in again</a></p>");
+    return null;
+  }
+  return user;
+}
+
+function requireAdminApi(req, res, next) {
+  const user = getUserFromRequest(req);
+  if (!user) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  if (user.internalAdmin !== true) {
+    res.status(403).json({ error: "Administrator access required" });
+    return;
+  }
+  if (!mfaEnabled(user) || user.__sessionMfa !== true) {
+    res.status(403).json({ error: "Administrator MFA is required" });
+    return;
+  }
+  req.user = user;
+  next();
+}
+
+function adminData() {
+  const users = readJson(USERS_FILE, []);
+  const submissions = readJson(SUBMISSIONS_FILE, [])
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const contacts = readJson(CONTACTS_FILE, [])
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const resetRequests = readJson(RESET_REQUESTS_FILE, [])
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return {
+    users: users.map((user) => ({
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone || "",
+      createdAt: user.createdAt,
+      internalAdmin: user.internalAdmin === true,
+      mfaEnabled: mfaEnabled(user)
+    })),
+    submissions,
+    contacts,
+    resetRequests,
+    counts: {
+      users: users.length,
+      submissions: submissions.length,
+      pendingSubmissions: submissions.filter((submission) => submission.status === "Pending").length,
+      contacts: contacts.length,
+      resetRequests: resetRequests.filter((request) => Number(request.completedAt || 0) === 0).length
+    }
+  };
+}
+
+function adminHeaders(res) {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'self' 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+}
+
+function adminOptions(values, current) {
+  return values.map((value) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(value)}</option>`).join("");
+}
+
+function adminLayout(title, user, body) {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title><link rel="stylesheet" href="/styles.css"></head>
+<body><header class="site-header"><div class="header-inner">
+<a class="brand" href="/admin">The Book On Admin</a>
+<nav class="nav" aria-label="Admin navigation"><a href="/admin">Submissions</a><a href="/">Public site</a></nav>
+<form action="/api/logout" method="post"><button class="button secondary" type="submit">Sign out</button></form>
+</div></header><main class="section"><div class="section-inner">
+<p class="eyebrow">Administrator: ${escapeHtml(user.email)}</p><h1>${escapeHtml(title)}</h1>${body}
+</div></main></body></html>`;
+}
+
+function adminDashboardPage({ user, data, message, error }) {
+  const submissionRows = data.submissions.map((submission) => `<tr>
+<td><a href="/admin/submissions/${encodeURIComponent(submission.id)}">${escapeHtml(submission.title || "Untitled")}</a><br><small>${escapeHtml(submission.id)}</small></td>
+<td>${escapeHtml(submission.authorName || "Unknown")}<br><small>${escapeHtml(submission.email || "")}</small></td>
+<td>${escapeHtml(submission.status || "Pending")}<br><small>${escapeHtml(submission.reviewState || "Under Review")}</small></td>
+<td>${escapeHtml(submission.createdAt || "")}</td>
+<td><a href="/admin/download/${encodeURIComponent(submission.id)}">Download</a></td></tr>`).join("");
+  const userRows = data.users.map((account) => `<tr><td>${escapeHtml(account.fullName || "")}<br><small>${escapeHtml(account.email || "")}</small></td><td>${account.internalAdmin ? "Administrator" : "Author"}</td><td>${account.mfaEnabled ? "Enabled" : "Not enabled"}</td><td>${escapeHtml(account.createdAt || "")}</td></tr>`).join("");
+  const contactRows = data.contacts.slice(0, 50).map((contact) => `<li><strong>${escapeHtml(contact.name || contact.email || "Contact")}</strong> ${escapeHtml(contact.email || "")}<br>${escapeHtml(contact.message || contact.subject || "")}<br><small>${escapeHtml(contact.createdAt || "")}</small></li>`).join("") || "<li>No contact messages.</li>";
+  const resetRows = data.resetRequests.slice(0, 50).map((request) => `<li>${escapeHtml(request.email || "Unknown")} <small>${escapeHtml(request.createdAt || "")}</small></li>`).join("") || "<li>No password reset requests.</li>";
+  return adminLayout("Admin overview", user, `
+    ${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}${message ? `<p role="status">${escapeHtml(message)}</p>` : ""}
+    <div class="notice"><strong>${data.counts.users}</strong> accounts · <strong>${data.counts.submissions}</strong> submissions · <strong>${data.counts.pendingSubmissions}</strong> pending · <strong>${data.counts.contacts}</strong> contact messages · <strong>${data.counts.resetRequests}</strong> open reset requests</div>
+    <h2>Submissions</h2><div style="overflow:auto"><table><thead><tr><th>Title</th><th>Author</th><th>Status</th><th>Received</th><th>File</th></tr></thead><tbody>${submissionRows || "<tr><td colspan=\"5\">No submissions.</td></tr>"}</tbody></table></div>
+    <h2>Author accounts</h2><div style="overflow:auto"><table><thead><tr><th>Account</th><th>Role</th><th>MFA</th><th>Created</th></tr></thead><tbody>${userRows}</tbody></table></div>
+    <h2>Contact messages</h2><ul>${contactRows}</ul>
+    <h2>Password reset requests</h2><ul>${resetRows}</ul>`);
+}
+
+function adminSubmissionPage({ user, submission, message, error }) {
+  const notes = (submission.adminNotes || []).map((note) => `<li>${escapeHtml(note.note || "")}<br><small>${escapeHtml(note.at || "")} · ${escapeHtml(note.by || "")}</small></li>`).join("") || "<li>No administrator notes.</li>";
+  return adminLayout("Submission review", user, `
+    ${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}${message ? `<p role="status">${escapeHtml(message)}</p>` : ""}
+    <p><a href="/admin">Back to admin overview</a> · <a href="/admin/download/${encodeURIComponent(submission.id)}">Download manuscript</a></p>
+    <dl>
+      <dt>Reference</dt><dd>${escapeHtml(submission.id)}</dd>
+      <dt>Author</dt><dd>${escapeHtml(submission.authorName || "Unknown")} · ${escapeHtml(submission.email || "")}</dd>
+      <dt>Title</dt><dd>${escapeHtml(submission.title || "Untitled")}</dd>
+      <dt>Category / stage</dt><dd>${escapeHtml(submission.category || "")} · ${escapeHtml(submission.stage || "")}</dd>
+      <dt>Service interest</dt><dd>${escapeHtml(submission.serviceInterest || "")}</dd>
+      <dt>Synopsis</dt><dd><pre style="white-space:pre-wrap">${escapeHtml(submission.synopsis || "")}</pre></dd>
+      <dt>Target reader</dt><dd><pre style="white-space:pre-wrap">${escapeHtml(submission.audience || "")}</pre></dd>
+      <dt>Received / updated</dt><dd>${escapeHtml(submission.createdAt || "")} · ${escapeHtml(submission.updatedAt || "")}</dd>
+    </dl>
+    <h2>Review decision</h2>
+    <form action="/admin/submissions/${encodeURIComponent(submission.id)}" method="post">
+      <p><label>Status<br><select name="status">${adminOptions(ADMIN_SUBMISSION_STATUSES, submission.status || "Pending")}</select></label></p>
+      <p><label>Review state<br><select name="reviewState">${adminOptions(ADMIN_REVIEW_STATES, submission.reviewState || "Under Review")}</select></label></p>
+      <p><label>Administrator note (optional)<br><textarea name="note" rows="4" maxlength="2000"></textarea></label></p>
+      <p><button class="button" type="submit">Save review</button></p>
+    </form>
+    <h2>Administrator notes</h2><ul>${notes}</ul>`);
 }
 
 const MFA_ISSUER = process.env.MFA_ISSUER || "The Book On Publishing";
@@ -898,6 +1048,100 @@ app.get("/api/submissions", requireAuth, (req, res) => {
     .filter((submission) => submission.userId === req.user.id || normalizeEmail(submission.email) === req.user.email)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   res.json({ submissions });
+});
+
+app.get("/admin", (req, res) => {
+  const user = adminPageUser(req, res);
+  if (!user) return;
+  adminHeaders(res);
+  res.status(200).type("html").send(adminDashboardPage({
+    user,
+    data: adminData(),
+    message: req.query.updated ? "Submission review saved." : ""
+  }));
+});
+
+app.get("/api/admin/overview", requireAdminApi, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json(adminData());
+});
+
+app.get("/admin/submissions/:id", (req, res) => {
+  const user = adminPageUser(req, res);
+  if (!user) return;
+  const submission = readJson(SUBMISSIONS_FILE, []).find((candidate) => candidate.id === req.params.id);
+  if (!submission) {
+    adminHeaders(res);
+    sendConfirmation(res, confirmationPage({
+      title: "Submission Not Found",
+      status: 404,
+      body: "<p>The requested submission does not exist.</p><p><a class=\"button\" href=\"/admin\">Back to admin overview</a></p>"
+    }));
+    return;
+  }
+  adminHeaders(res);
+  res.status(200).type("html").send(adminSubmissionPage({
+    user,
+    submission,
+    message: req.query.updated ? "Submission review saved." : ""
+  }));
+});
+
+app.post("/admin/submissions/:id", (req, res) => {
+  const user = adminPageUser(req, res);
+  if (!user) return;
+  const status = cleanText(req.body.status, 80);
+  const reviewState = cleanText(req.body.reviewState, 80);
+  const note = cleanLongText(req.body.note, 2000);
+  if (!ADMIN_SUBMISSION_STATUSES.includes(status) || !ADMIN_REVIEW_STATES.includes(reviewState)) {
+    adminHeaders(res);
+    const submission = readJson(SUBMISSIONS_FILE, []).find((candidate) => candidate.id === req.params.id);
+    if (!submission) {
+      sendConfirmation(res, confirmationPage({ title: "Submission Not Found", status: 404, body: "<p>The requested submission does not exist.</p>" }));
+      return;
+    }
+    sendConfirmation(res, confirmationPage({
+      title: "Review Decision Needs Attention",
+      status: 400,
+      body: `<p>Choose a valid status and review state.</p><p><a class="button" href="/admin/submissions/${escapeHtml(encodeURIComponent(submission.id))}">Return to review</a></p>`
+    }));
+    return;
+  }
+  const submissions = readJson(SUBMISSIONS_FILE, []);
+  const submission = submissions.find((candidate) => candidate.id === req.params.id);
+  if (!submission) {
+    adminHeaders(res);
+    sendConfirmation(res, confirmationPage({ title: "Submission Not Found", status: 404, body: "<p>The requested submission does not exist.</p>" }));
+    return;
+  }
+  const now = new Date().toISOString();
+  submission.status = status;
+  submission.reviewState = reviewState;
+  submission.updatedAt = now;
+  if (note) {
+    submission.adminNotes = Array.isArray(submission.adminNotes) ? submission.adminNotes : [];
+    submission.adminNotes.push({ at: now, by: user.email, note });
+  }
+  writeJson(SUBMISSIONS_FILE, submissions);
+  res.redirect(303, `/admin/submissions/${encodeURIComponent(submission.id)}?updated=1`);
+});
+
+app.get("/admin/download/:id", (req, res) => {
+  const user = adminPageUser(req, res);
+  if (!user) return;
+  const submission = readJson(SUBMISSIONS_FILE, []).find((candidate) => candidate.id === req.params.id);
+  if (!submission || !submission.file || !submission.file.relativePath) {
+    res.status(404).json({ error: "Manuscript file not found" });
+    return;
+  }
+  const root = path.resolve(DATA_DIR) + path.sep;
+  const filePath = path.resolve(DATA_DIR, submission.file.relativePath);
+  if (!filePath.startsWith(root) || !fs.existsSync(filePath)) {
+    res.status(404).json({ error: "Manuscript file not found" });
+    return;
+  }
+  res.setHeader("Cache-Control", "no-store");
+  res.download(filePath, submission.file.originalName || "manuscript");
 });
 
 function accountUser(req, res) {
