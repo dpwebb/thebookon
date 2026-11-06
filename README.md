@@ -6,6 +6,22 @@ The public pages live in `public/` and are served by a small Node.js app in Dock
 
 Runtime submissions and uploaded files are stored in the Docker volume mounted at `/app/data`. Do not commit runtime data.
 
+## Administrator Surface
+
+`GET /admin` is an enforced administrator workspace. It requires a signed-in account with `internalAdmin: true` and MFA enabled; otherwise it returns 403. The workspace shows author accounts, submissions, contact messages and reset requests, supports validated submission review updates and administrator notes, and downloads manuscripts only from the configured data directory.
+
+Administrator actions are available at:
+
+- `GET /admin`
+- `GET /admin/submissions/:id`
+- `POST /admin/submissions/:id`
+- `GET /admin/download/:id`
+- `GET /api/admin/overview`
+
+The local administrator is created with `npm run admin:seed`; MFA is enrolled through the normal `/account/mfa` flow.
+
+Portfolio administrator CGSSO is available at `/auth/admin/start`. After the exact CGSSO admin subject/group and provider MFA are verified, the callback issues a 15-minute native `tbo_session` with the MFA-verified marker and redirects to `/admin`. It resolves only an existing `internalAdmin` account and never provisions one. Native author login, native MFA and native admin login remain unchanged.
+
 ## Refresh Static Content
 
 Use the bundled Codex Python runtime or any Python 3.11+ interpreter:

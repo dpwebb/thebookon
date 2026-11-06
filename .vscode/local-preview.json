@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "appId": "the-book-on",
+  "name": "The Book On",
+  "uiUrl": "http://127.0.0.1:3515",
+  "apiUrl": "http://127.0.0.1:3515",
+  "healthPath": "/health",
+  "mode": "single-process",
+  "staticPort": null,
+  "staticRoot": null,
+  "env": {
+    "PORT": "3515"
+  },
+  "commands": {
+    "ui": [
+      {
+        "command": "node",
+        "args": [
+          "server.js"
+        ],
+        "check": null
+      },
+      {
+        "command": "npm",
+        "args": [
+          "start"
+        ],
+        "check": null
+      }
+    ],
+    "api": []
+  }
+}
