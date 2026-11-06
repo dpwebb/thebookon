@@ -20,6 +20,8 @@ Administrator actions are available at:
 
 The local administrator is created with `npm run admin:seed`; MFA is enrolled through the normal `/account/mfa` flow.
 
+Portfolio administrator CGSSO is available at `/auth/admin/start`. After the exact CGSSO admin subject/group and provider MFA are verified, the callback issues a 15-minute native `tbo_session` with the MFA-verified marker and redirects to `/admin`. It resolves only an existing `internalAdmin` account and never provisions one. Native author login, native MFA and native admin login remain unchanged.
+
 ## Refresh Static Content
 
 Use the bundled Codex Python runtime or any Python 3.11+ interpreter:

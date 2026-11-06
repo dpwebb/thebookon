@@ -121,6 +121,13 @@ test('admin surface requires login, administrator flag and MFA', async () => {
   assert.match(html, /A Test Manuscript/);
   assert.match(html, /author@example\.test/);
   assert.doesNotMatch(html, /passwordHash|encrypted-secret/);
+
+  const cgssSession = await fetch(`${base}/admin`, {
+    headers: { cookie: cookieFor(adminNoMfa, { mfa: true }) },
+    redirect: 'manual'
+  });
+  assert.equal(cgssSession.status, 200);
+  assert.match(await cgssSession.text(), /Admin overview/);
 });
 
 test('admin overview API is admin-only and returns sanitized data', async () => {

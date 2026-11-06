@@ -7,6 +7,7 @@ const path = require("path");
 const express = require("express");
 const multer = require("multer");
 const mfa = require("./helpers/mfa");
+const { createCgssAdmin } = require("./helpers/cgssAdmin");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -142,12 +143,12 @@ function signPayload(payload) {
   return crypto.createHmac("sha256", sessionSecret).update(payload).digest("base64url");
 }
 
-function encodeSession(user) {
+function encodeSession(user, { mfaVerified = mfaEnabled(user), ttlMs = 7 * 24 * 60 * 60 * 1000 } = {}) {
   const payload = Buffer.from(JSON.stringify({
     uid: user.id,
     email: user.email,
-    mfa: mfaEnabled(user),
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000
+    mfa: Boolean(mfaVerified),
+    exp: Date.now() + ttlMs
   })).toString("base64url");
   return `${payload}.${signPayload(payload)}`;
 }
@@ -184,14 +185,14 @@ function getUserFromRequest(req) {
   }
 }
 
-function setSessionCookie(req, res, user) {
+function setSessionCookie(req, res, user, { mfaVerified = mfaEnabled(user), ttlMs = 7 * 24 * 60 * 60 * 1000 } = {}) {
   const secure = req.secure || req.headers["x-forwarded-proto"] === "https";
   const cookie = [
-    `${COOKIE_NAME}=${encodeURIComponent(encodeSession(user))}`,
+    `${COOKIE_NAME}=${encodeURIComponent(encodeSession(user, { mfaVerified, ttlMs }))}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
-    "Max-Age=604800"
+    `Max-Age=${Math.max(1, Math.floor(ttlMs / 1000))}`
   ];
   if (secure) cookie.push("Secure");
   res.setHeader("Set-Cookie", cookie.join("; "));
@@ -200,6 +201,12 @@ function setSessionCookie(req, res, user) {
 function clearSessionCookie(res) {
   res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
+
+const cgssAdmin = createCgssAdmin({
+  usersFile: USERS_FILE,
+  dataDir: DATA_DIR,
+  setSessionCookie
+});
 
 function confirmationPage({ title, eyebrow = "The Book On Publishing", body, status = 200 }) {
   return {
@@ -281,8 +288,8 @@ function adminPageUser(req, res) {
     adminDeniedPage(res, "Administrator Access Required", "<p>This account is not an administrator for The Book On.</p><p><a class=\"button\" href=\"/my-author-account/\">Return to your account</a></p>");
     return null;
   }
-  if (!mfaEnabled(user) || user.__sessionMfa !== true) {
-    adminDeniedPage(res, "Administrator MFA Required", "<p>Two-factor authentication must be enabled and verified in this session before the admin workspace can be opened.</p><p><a class=\"button\" href=\"/account/mfa\">Set up two-factor authentication</a></p><p><a class=\"button secondary\" href=\"/login/\">Sign in again</a></p>");
+  if (user.__sessionMfa !== true) {
+    adminDeniedPage(res, "Administrator MFA Required", "<p>This session has not completed two-factor verification. Use the portfolio CGSSO sign-in or sign in with a native account that has MFA enabled.</p><p><a class=\"button\" href=\"/auth/admin/start\">Portfolio administrator sign-in</a></p><p><a class=\"button secondary\" href=\"/login/\">Native sign in</a></p>");
     return null;
   }
   return user;
@@ -298,7 +305,7 @@ function requireAdminApi(req, res, next) {
     res.status(403).json({ error: "Administrator access required" });
     return;
   }
-  if (!mfaEnabled(user) || user.__sessionMfa !== true) {
+  if (user.__sessionMfa !== true) {
     res.status(403).json({ error: "Administrator MFA is required" });
     return;
   }
@@ -1048,6 +1055,25 @@ app.get("/api/submissions", requireAuth, (req, res) => {
     .filter((submission) => submission.userId === req.user.id || normalizeEmail(submission.email) === req.user.email)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   res.json({ submissions });
+});
+
+app.get("/auth/admin/start", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    res.redirect(302, await cgssAdmin.start(req));
+  } catch (error) {
+    res.status(error.statusCode || 503).json({ error: "Admin sign-in is unavailable." });
+  }
+});
+
+app.get("/auth/admin/callback", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    await cgssAdmin.callback(req, res);
+    res.redirect(303, "/admin");
+  } catch (error) {
+    res.status(error.statusCode || 401).json({ error: "Admin sign-in failed." });
+  }
 });
 
 app.get("/admin", (req, res) => {
