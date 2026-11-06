@@ -209,4 +209,3 @@ export async function verifyJwt(
     claims: normalizeClaims(payload),
   });
 }
-
