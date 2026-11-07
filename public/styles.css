@@ -695,6 +695,24 @@ button.button {
   text-transform: uppercase;
 }
 
+/* Dropdown option contrast — group standard, 6 November 2026. */
+select option,
+select optgroup {
+  color: var(--ink, #211916);
+  background-color: #ffffff;
+}
+
+select option:checked,
+select option:hover {
+  color: #fffaf1;
+  background-color: var(--burgundy, #7c2028);
+}
+
+select option:disabled {
+  color: var(--soft-ink, #5f534e);
+  background-color: #ffffff;
+}
+
 .status-grid dd {
   margin: 4px 0 0;
   color: var(--ink);
