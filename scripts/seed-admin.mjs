@@ -11,8 +11,8 @@ mkdirSync(dataDir, { recursive: true });
 
 const usersPath = join(dataDir, "users.json");
 const users = readJson(usersPath, []);
-const email = (process.env.COMPND_ADMIN_EMAIL ?? "admin@compnd.systems").trim().toLowerCase();
-const fullName = process.env.COMPND_ADMIN_DISPLAY_NAME ?? "Compnd Systems Admin";
+const email = (process.env.COMPND_ADMIN_EMAIL ?? "admin@ordevane.com").trim().toLowerCase();
+const fullName = process.env.COMPND_ADMIN_DISPLAY_NAME ?? "Ordevane Admin";
 const password = process.env.COMPND_ADMIN_PASSWORD ?? "";
 if (password.length < 15) fail("COMPND_ADMIN_PASSWORD must be at least 15 characters.");
 
